@@ -1,0 +1,40 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "{98BF72F1-4395-A147-85B0-5AB615DBD290}",
+	"Category": "",
+	"Description": "",
+	"Modules": [
+		{
+			"Name": "TeamProject_SL",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"AdditionalDependencies": [
+				"Engine",
+				"AIModule",
+				"UMG",
+				"GameplayAbilities"
+			]
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "ModelingToolsEditorMode",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "StateTree",
+			"Enabled": true
+		},
+		{
+			"Name": "GameplayStateTree",
+			"Enabled": true
+		},
+		{
+			"Name": "GameplayAbilities",
+			"Enabled": true
+		}
+	]
+}
