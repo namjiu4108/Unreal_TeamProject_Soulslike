@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "TeamProject_SLCharacter.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemInterface.h"
 #include "GameFramework/Character.h"
@@ -15,9 +16,11 @@ class UBaseAttributeSet;
 class UGameplayAbility;
 
 UCLASS()
-class TEAMPROJECT_SL_API ACharacterBase : public ACharacter, public IAbilitySystemInterface
+class TEAMPROJECT_SL_API ACharacterBase : public ATeamProject_SLCharacter, public IAbilitySystemInterface
 {
 	GENERATED_BODY()
+
+
 
 public:
 	ACharacterBase();
