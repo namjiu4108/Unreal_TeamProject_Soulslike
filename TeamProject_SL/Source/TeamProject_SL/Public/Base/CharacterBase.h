@@ -22,16 +22,24 @@ class TEAMPROJECT_SL_API ACharacterBase : public ACharacter, public IAbilitySyst
 public:
 	ACharacterBase();
 
+	/*어빌리티 시스템 컴포넌트*/
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AbilitySystem")
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
 
+	/*능력치 어빌리티 클래스*/
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AbilitySystem")
-	TObjectPtr<UBaseAttributeSet> BaseAttributeSet;
+	TArray<TObjectPtr<UAttributeSet>>  BaseAttributeSet;
 
+	/*공용 능력치*/
+	UPROPERTY(EditAnywhere, Category = "Attributes")
+	TObjectPtr<UBaseAttributeSet> BaseAttribute;
+
+	/*캐릭터가 보유할수있는 스킬 배열*/
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GASGamePlayAbility")
 	TArray<TSubclassOf<UGameplayAbility>> InitalAbilities;
 
 protected:
+	/*멀티플레이 모드 GAS*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AbilitySystem")
 	EGameplayEffectReplicationMode AscReplicationMode = EGameplayEffectReplicationMode::Mixed;
 
