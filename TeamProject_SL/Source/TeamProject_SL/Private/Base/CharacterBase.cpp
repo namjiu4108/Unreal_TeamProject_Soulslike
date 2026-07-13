@@ -38,6 +38,9 @@ ACharacterBase::ACharacterBase()
 void ACharacterBase::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// 바인딩 호출
+	BindAttributeChangeDelegates();
 }
 
 void ACharacterBase::PossessedBy(AController* NewController)
@@ -48,6 +51,7 @@ void ACharacterBase::PossessedBy(AController* NewController)
 	{
 		AbilitySystemComponent->InitAbilityActorInfo(this, this);
 		InitializeAbilityMulti(InitalAbilities, 1);
+		BindAttributeChangeDelegates();
 	}
 }
 
@@ -58,6 +62,7 @@ void ACharacterBase::OnRep_PlayerState()
 	if (AbilitySystemComponent)
 	{
 		AbilitySystemComponent->InitAbilityActorInfo(this, this);
+		BindAttributeChangeDelegates();
 	}
 }
 
@@ -100,4 +105,46 @@ void ACharacterBase::InitializeAbilityMulti(TArray<TSubclassOf<UGameplayAbility>
 			InitializeAbility(AbilityItem, AbilityLevel);
 		}
 	}
+}
+
+void ACharacterBase::BindAttributeChangeDelegates()
+{
+	if (AttributeDelegatesBound || !AbilitySystemComponent || !BaseAttribute)
+	{
+		return;
+	}
+
+	AttributeDelegatesBound = true;
+
+	AbilitySystemComponent
+		->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetHealthAttribute())
+		.AddUObject(this, &ACharacterBase::HandleHealthChanged);
+
+	AbilitySystemComponent
+		->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetMaxHealthAttribute())
+		.AddUObject(this, &ACharacterBase::HandleMaxHealthChanged);
+}
+
+// Health Attribute가 변경되었을 때 ASC 델리게이트에 의해 호출
+// 현재 Health와 MaxHealth를 Blueprint 이벤트로 넘겨 UI를 갱신
+void ACharacterBase::HandleHealthChanged(const FOnAttributeChangeData& Data)
+{
+	if (!BaseAttribute)
+	{
+		return;
+	}
+
+	OnHealthUpdated(BaseAttribute->GetHealth(), BaseAttribute->GetMaxHealth());
+}
+
+// MaxHealth가 변경되었을 때 호출
+// 최대 체력이 바뀌면 HP 비율도 달라질 수 있으므로 HP UI를 다시 갱신
+void ACharacterBase::HandleMaxHealthChanged(const FOnAttributeChangeData& Data)
+{
+	if (!BaseAttribute)
+	{
+		return;
+	}
+
+	OnHealthUpdated(BaseAttribute->GetHealth(), BaseAttribute->GetMaxHealth());
 }
