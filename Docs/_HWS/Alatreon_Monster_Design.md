@@ -12,32 +12,95 @@
 
 ## 2. 몬스터 최상위 상태
 
-몬스터는 항상 아래 두 상태 중 하나에 있다.
+몬스터는 항상 아래 네 상태 중 하나에 있다. (Alert/PostCombat은 Patrol⇄Combat 사이의 세부 전이 단계 — 큰 틀에서는 여전히 "정찰"과 "전투" 두 축)
 
 | 상태 | 설명 |
 |---|---|
 | **정찰 (Patrol)** | 기본 상태. 플레이어를 인지하기 전까지 유지 |
-| **전투 (Combat)** | 플레이어를 인지하면 진입 |
+| **경계 (Alert)** | 시야범위에서 플레이어를 포착, 아직 확정 인식은 아님 |
+| **전투 (Combat)** | 인식범위 진입 또는 시야범위 5초 이상 노출 시 진입 |
+| **전투 후 경계 (PostCombat)** | 전투 이탈/플레이어 사망 후 10초간 마지막 위치 경계, 이후 Patrol 복귀 |
 
 ### 상태 전이 조건
 
-- **정찰 → 전투**: 플레이어를 인지(감지)했을 때
-- **전투 → 정찰**: 몬스터가 **NavMeshBoundsVolume을 벗어났을 때**
+- **정찰 → 경계**: 플레이어가 시야범위에 포착됐을 때
+- **경계 → 전투**: 인식범위 진입(즉시) 또는 시야범위 내 5초 이상 연속 노출
+- **경계 → 정찰**: 일정 시간 플레이어를 다시 못 봤을 때
+- **전투 → 전투 후 경계**: 몬스터가 **NavMeshBoundsVolume을 벗어나거나** 플레이어가 전투 영역 이탈/사망했을 때
+- **전투 후 경계 → 정찰**: 10초 경과
 - **사망**: 상태로 취급하지 않고, 사망 시 즉시 게임 클리어 트리거로 처리
 
 ```
-[정찰] --(플레이어 인지)--> [전투] --(NavMeshBoundsVolume 이탈)--> [정찰]
-                              |
-                         (체력 0)
-                              v
-                          [게임 클리어]
+[정찰] --(시야범위 포착)--> [경계] --(인식범위 or 5초 노출)--> [전투]
+   ^                           |                                  |
+   |                      (재감지 실패)                    (영역 이탈/플레이어 이탈·사망)
+   |                           v                                  v
+   +------------------- [정찰]                          [전투 후 경계] --(10초)--> [정찰]
+
+[전투] --(체력 0)--> [게임 클리어]
 ```
 
 ## 3. 정찰(Patrol) 상태
 
-- NavMesh 범위 내에서 랜덤 위치로 이동을 반복하는 로밍 동작 (기존 프로토타입에 구현되어 있음)
-- 정찰 중 세부 연출용 애니메이션(둘러보기, 방향 전환 등)은 **현재 스코프에서는 보류**
-- 플레이어 인지 시 전투 상태로 전이
+### 3.1 세부 동작
+
+정찰 상태는 "가만히 있기 → (확률적으로 회전) → (확률적으로 걷기)"를 반복하는 루프로 구성한다. **둘러보기 연출은 제외**(스코프 아웃 확정, 재검토 안 함).
+
+```
+Sequence (Loop)
+├─ PlayIdle        : Idle 애니메이션 재생, 2~5초 랜덤 대기
+├─ MaybeTurn        : {0, 90, 180, -90, -180} 중 랜덤 선택, 0이면 스킵 / 아니면 제자리 회전
+└─ MaybeWalk        : 확률적으로 전방 300~600유닛 이동, 아니면 스킵하고 PlayIdle로 복귀
+```
+
+### 3.2 감지 (정찰 → 경계 → 전투)
+
+- **감지 컴포넌트: PawnSensing 유지** (AI Perception 대비 마이그레이션 이득 적음 — 기존 Roam/Chase/Roar 프로토타입 재사용, 신규 요구사항도 결국 커스텀 거리/타이머 로직이 필요해 어느 쪽이든 동일 비용)
+- 감지 범위 2단계:
+  - **시야범위** (바깥, 넓음): 플레이어를 인지했지만 확신 없음 → **Alert** 상태, `LastKnownPlayerLocation` 방향을 바라보며 경계 자세. 5초 이상 연속 노출 시 인식 확정
+  - **인식범위** (안쪽, 좁음): 노출 시간과 무관하게 즉시 **Combat** 진입
+
+```
+OnSeePawn(Player) 호출마다:
+  DistanceToPlayer = 계산
+  IF DistanceToPlayer <= 인식범위:
+      AIState = Combat (즉시)
+  ELIF DistanceToPlayer <= 시야범위:
+      AIState = Alert
+      LastKnownPlayerLocation = Player 현재 위치
+      SightTimer += DeltaTime
+      IF SightTimer >= 5.0: AIState = Combat
+
+일정 시간 OnSeePawn 미호출 시(Tick에서 마지막 감지 시각 체크):
+  SightTimer = 0
+  AIState == Alert 였다면 → Patrol 복귀
+```
+
+### 3.3 Blackboard 키
+
+| 키 | 타입 | 용도 |
+|---|---|---|
+| `AIState` | Enum (Patrol/Alert/Combat/PostCombat) | 현재 최상위 상태 |
+| `MoveTarget` | Vector | 정찰 이동 목표 지점 |
+| `LastKnownPlayerLocation` | Vector | 마지막으로 확인된 플레이어 위치 |
+| `DistanceToPlayer` | Float | 매 틱 갱신 |
+| `SightTimer` | Float | 시야범위 내 누적 노출 시간 |
+| `PostCombatTimer` | Float | 전투 이탈/사망 후 경계 카운트다운 (10초) |
+
+### 3.4 Behavior Tree 최상위 구조
+
+```
+Root
+└─ Selector
+    ├─ Combat       (AIState == Combat)        ← 별도 설계 (4장)
+    ├─ PostCombat    (AIState == PostCombat)
+    │    └─ Sequence
+    │         ├─ FaceLocation(LastKnownPlayerLocation) + 경계 자세, 10초 유지
+    │         └─ AIState = Patrol (10초 경과 후)
+    ├─ Alert         (AIState == Alert)
+    │    └─ FaceLocation(LastKnownPlayerLocation) + 경계 자세 (루프)
+    └─ Patrol (기본값, 3.1 참고)
+```
 
 ## 4. 전투(Combat) 상태 — 2페이즈 구조
 
@@ -145,6 +208,7 @@ CombatLoop (재귀 호출되는 커스텀 이벤트)
   - 감지 시 추격(Chase) → 사거리 진입 시 포효(Roar) 몽타주 재생 → **이후 전투(Combat) 상태로 연결 예정** (설계 논의 중)
 - 스켈레톤/애니메이션: `AlatreonMaster_UE_bones.blend` 기준 본 186개, 애니메이션 613개(중복 제거 완료), 언리얼 임포트 및 루트 모션 정상 동작 확인 완료
 - AnimBP: 정찰/전투 통합 단일 AnimBP로 결정 (`Speed → BS_Alatreon_Walk → Slot 'DefaultSlot' → Output Pose`), 전투 패턴은 이 Slot을 통해 몽타주로 재생
+- **2026-07-13**: 정찰(Patrol) 상태 상세 설계 확정 (3장) — 감지 컴포넌트는 PawnSensing 유지로 결정, 신규 요구사항(2단계 감지범위, 10초 전투 후 경계)은 커스텀 타이머 로직으로 구현. 오늘부터 정찰 상태 실제 구현 착수.
 
 ## 10. 참고
 
