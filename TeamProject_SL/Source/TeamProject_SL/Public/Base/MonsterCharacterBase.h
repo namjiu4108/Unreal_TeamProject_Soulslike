@@ -32,13 +32,22 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Attributes")
 	void OnGroggyDown();
 
+	// Health가 0 이하로 떨어지는 순간 한 번만 호출 (사망)
+	UFUNCTION(BlueprintImplementableEvent, Category = "Attributes")
+	void OnMonsterDeath();
+
+	// 대경직 모션이 끝난 뒤 Blueprint에서 호출해서 Groggy를 0으로 되돌리는 용도
+	UFUNCTION(BlueprintCallable, Category = "Attributes")
+	void ResetGroggy();
+
 protected:
-	// 부모 CharacterBase에서 Health / MaxHealth 관련 바인딩은 이미 처리됨
-	// 몬스터 전용 Attribute인 Groggy / MaxGroggy 바인딩만 추가로 등록
+	// 부모 CharacterBase에서 Health / MaxHealth 관련 바인딩(UI 갱신용)은 이미 처리됨
+	// 몬스터 전용 Attribute인 Groggy / MaxGroggy 바인딩과, 사망 감지용 Health 바인딩을 추가로 등록
 	virtual void BindAttributeChangeDelegates() override;
 
 	void HandleGroggyChanged(const FOnAttributeChangeData& Data);
+	void HandleMonsterHealthChanged(const FOnAttributeChangeData& Data);
 
-	// Groggy 델리게이트가 중복 등록되지 않도록 막는 플래그
+	// Groggy/사망 델리게이트가 중복 등록되지 않도록 막는 플래그
 	bool MonsterAttributeDelegatesBound = false;
 };

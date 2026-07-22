@@ -32,6 +32,10 @@ void AMonsterCharacterBase::BindAttributeChangeDelegates()
 	AbilitySystemComponent
 		->GetGameplayAttributeValueChangeDelegate(UMonsterAttributeSet::GetGroggyAttribute())
 		.AddUObject(this, &AMonsterCharacterBase::HandleGroggyChanged);
+
+	AbilitySystemComponent
+		->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetHealthAttribute())
+		.AddUObject(this, &AMonsterCharacterBase::HandleMonsterHealthChanged);
 }
 
 void AMonsterCharacterBase::HandleGroggyChanged(const FOnAttributeChangeData& Data)
@@ -54,5 +58,21 @@ void AMonsterCharacterBase::HandleGroggyChanged(const FOnAttributeChangeData& Da
 	if (Data.OldValue < MaxGroggyValue && Data.NewValue >= MaxGroggyValue)
 	{
 		OnGroggyDown();
+	}
+}
+
+void AMonsterCharacterBase::HandleMonsterHealthChanged(const FOnAttributeChangeData& Data)
+{
+	if (Data.OldValue > 0.0f && Data.NewValue <= 0.0f)
+	{
+		OnMonsterDeath();
+	}
+}
+
+void AMonsterCharacterBase::ResetGroggy()
+{
+	if (MonsterAttribute)
+	{
+		MonsterAttribute->SetGroggy(0.0f);
 	}
 }

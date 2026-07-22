@@ -215,6 +215,30 @@ CombatLoop
  8. On Completed → 콤보 카운트 확인 → 남았으면 5번부터 재시도(타겟 위치/패턴 재선정), 다 썼으면 Idle 복귀 후 CombatLoop 재호출
 ```
 
+## 6-1. 공격 판정(히트박스) 시스템
+
+### 배경 조사 (팀원 `NJWs` 코드 분석, 2026-07-20)
+
+- `COL_HitBox`(공용 베이스 클래스, `Content/NJWs/SwordCharacter/Col/`)에 트레이스 함수가 2개 있음:
+  - `CreateHitEffect`: 단일 `Sphere Trace By Channel` + 히트 이펙트(나이아가라)/사운드 재생 — **연출용**, 데미지 로직과 무관
+  - `CreateSphere`: `Multi Sphere Trace By Channel` + 히트한 액터별로 `Cast To BP_PlayerCharacter`/`Cast To BP_Alatreon` 분기 → `Take Damage` 호출 — **실제 데미지 적용 함수**. 몬스터 피격 로직(우리가 예전에 추가한 "몬스터 데미지 로직 추가" 브랜치)도 이미 이 함수 안에 있어서, `COL_HitBox`를 상속만 하면 플레이어 피격 처리가 별도 코드 없이 그대로 동작함
+  - Start==End로 트레이스하면 이동거리 0인 스윕 = 정지 오버랩 체크와 동일 (언리얼 표준 동작이라 별도 처리 불필요) → 점 판정(머리흔들기 등)/스윕 판정(꼬리치기 등) 모두 같은 함수로 커버 가능
+- `COL_SwordAtk`(플레이어 검 공격용, `COL_HitBox` 상속, `Content/NJWs/`)가 참고할 구현 패턴:
+  - `BeginPlay`: Owner 캐스트 → 무기 소켓 2개(`StartHitBox`/`EndHitBox`) 위치 계산 → 최초 트레이스 1회 → `Delay(0.5) → Destroy Actor`(안전 타임아웃)
+  - `Tick`: 매 프레임 소켓 위치 재계산 → `CreateSphere` 재실행 → 맞으면 즉시 `Destroy Actor`(중복 히트 방지)
+  - 외부에서 "끝내라"는 신호 없이 액터 스스로 수명 관리 → **순간형 `Anim Notify` 하나로 스폰만 하면 충분** (Begin/End 페어의 Notify State 불필요)
+- `ANS_ParryWindow`(참고용 Notify State 예시): Notify Begin/End에서 플레이어의 `Start/End Parry Window` 커스텀 이벤트만 호출하는 얇은 트리거 — 순수 상태 토글용은 이 패턴으로 감
+
+### 채택한 설계: `COL_MonsterAtk`
+
+- `COL_HitBox` 상속, `COL_SwordAtk` 구조 그대로 재현 (BeginPlay 초기 트레이스+Delay 자동파괴, Tick 반복 트레이스+피격 시 즉시 파괴)
+- Owner 캐스트 대상은 `BP_PlayerCharacter`가 아니라 `BP_Alatreon`, 무기 메시 대신 몬스터 자신의 Mesh 소켓 사용
+- 소켓 이름(점 판정=1개를 Start/End 둘 다에 사용, 스윕 판정=2개)을 Instance Editable 변수로 노출해서 부위/판정모양별로 재사용
+- 스폰: `BP_Alatreon`에 `StartMeleeHitbox`(SocketName 등) 커스텀 이벤트 → `Spawn Actor From Class`(COL_MonsterAtk) → `Attach Actor To Component`(소켓). 공격 몽타주엔 순간형 `Anim Notify`만 배치해서 이 이벤트 호출
+- 양팔 동시 판정(스탬프 등) 같은 다중 판정은 **같은 프레임에 노티파이를 부위 수만큼 배치**해서 해결(각각 다른 SocketName으로) — 별도 배열/구조 불필요
+- 넉백은 `COL_HitBox` 쪽이 아니라 **`BP_PlayerCharacter`의 `Take Damage` 안에서 `LaunchCharacter`로 처리** (물리 임펄스 대신 방향/세기를 직접 지정해서 거리 컨트롤 가능하게)
+- (폐기됨: `ANS_MeleeHitWindow` + `StartMeleeHitbox`/`EndMeleeHitbox` Begin/End 페어 방식 — `COL_SwordAtk`처럼 액터가 스스로 수명 관리하는 게 더 간단해서 이 방식으로 교체함)
+
 ## 7. 사망 처리
 
 - 몬스터 체력이 0이 되면 **게임 클리어** 트리거 실행
@@ -238,18 +262,23 @@ CombatLoop
 
 - **정찰(Patrol)**: 완료 — `BB_Alatreon`/`BT_Alatreon` 기반, `Wait → BTTask_RandomTurn → BTTask_PickPatrolPoint → Move To` 루프
 - **경계(Alert)**: 완료 — `On See Pawn`에서 `AIState=Alert` 설정, `Move To(LastKnownPlayerLocation) → BTTask_PlayRoarMontage`, 완료 시 `AIState=Combat`. 실제 플레이 테스트로 정찰→경계(접근+포효)→전투 전이 확인함.
-- **전투(Combat)**: **루프 골격 Blueprint 구현 완료 + 실제 테스트로 정상 동작 확인함** — 타겟 랜덤 선정, 콤보 1~3회 반복(매회 위치 재확인), Roar를 임시 공격으로 대체해서 검증. 포지셔닝(104~108)과 실제 공격 패턴(DataTable)은 아직 이 루프에 안 붙어있음 — 다음 단계.
+- **전투(Combat)**: 루프 골격 + **포지셔닝(104~108 회전, 106 백스텝, 거리 기반 접근 `AI MoveTo`) 전부 완성 및 테스트 완료**. `FaceTarget`(`FN_Rotator`+`FN_Turn`)이 각도 계산→분류→몽타주 선택까지 담당, `ComboStep`이 접근 필요 여부 판단. GAS 데미지/그로기 적용도 `COL_HitBox` 상속 구조로 완료(9-1 참고). **공격 패턴은 몽타주 5개(스탬프/턴어택/꼬리치기/머리흔들기/돌진) 확보, 우선 3개(스탬프/턴어택/머리흔들기)로 랜덤 재생 시도 중** — 나머지 2개는 거리/각도 조건부로 나중에 추가 예정. 공격 판정(히트박스)은 `COL_MonsterAtk` 설계 완료, 구현 진행 중 (6-1절 참고).
+- **GAS 데미지/그로기 적용**: 완료 — `BP_Alatreon`에 `TakeDamage` 이벤트(Owner=공격자 ASC로 Make Outgoing Spec, Target=자기 ASC로 Apply), `COL_HitBox`가 상속 구조로 자동 호출. `Get Distance To`/`AI MoveTo`의 `Target Actor` 캐싱 타이밍 버그 등 여러 버그 수정 후 실동작 확인함.
 - **이동 애니메이션 전환**: 정찰=걷기/경계·전투=달리기 스위칭 완료 (`Blend Poses by Bool`), 속도 SET도 완료
 - **Mirror Data Table 방식**: 스켈레톤 리깅 특성상 근본적으로 안 맞아서 포기, 브릿지 애니메이션 방식으로 대체 (Blender 세션에서 진행 중)
 - 스켈레톤/애니메이션: `AlatreonMaster_UE_bones.blend` 기준 본 186개, 애니메이션 613개(중복 제거 완료)
 
 ## 10. 다음에 할 일 (우선순위 순)
 
-1. **포지셔닝(104~106~108) 로직을 `ComboStep`에 연결** — 지금은 타겟 방향/거리 계산 없이 바로 Roar만 재생함. 상대각 계산 → 104/105/106/107/108 선택 → Force Root Lock+블루프린트 회전 순서로 붙이기
-2. **실제 공격 패턴 제작 시작** — `FAlatreonPatternRow` DataTable 실제로 만들고, Roar 자리에 진짜 패턴 몽타주 연결
-3. **전투 이탈(NavMeshBoundsVolume 이탈 → 정찰 복귀)** 로직 아직 미구현 — 지금은 전투에 들어가면 나올 방법이 없음
-4. **PostCombat(전투 후 경계) 상태** 미구현 — 타겟을 완전히 놓쳤을 때(사망/범위 이탈 후 새 타겟도 없음) 처리
-5. 8절 TBD 항목들(가중치 수치, 각도/거리 임계값 등)은 실제 패턴/포지셔닝 붙이면서 테스트로 조정
+1. **`COL_MonsterAtk` 구현** (6-1절 설계대로) — `COL_HitBox` 상속, `COL_SwordAtk` 패턴 재현, 소켓 기반 점/스윕 판정
+2. **`BP_Alatreon`에 `StartMeleeHitbox` 이벤트 + 공격 몽타주에 순간형 Anim Notify 배치** — 스탬프(양팔 동시), 턴어택, 머리흔들기부터
+3. **`PlayAttackStep`을 `Select` 기반 랜덤 3패턴 재생으로 교체** (현재 진행 중)
+4. **`BP_PlayerCharacter`의 `Take Damage`에 `LaunchCharacter` 넉백 추가**
+5. 꼬리치기/돌진은 거리·각도 조건부로 나중에 패턴 풀에 추가 (`FAlatreonPatternRow` DataTable 정식 도입은 그 다음)
+6. **전투 이탈(NavMeshBoundsVolume 이탈 → 정찰 복귀)** 로직 아직 미구현 — 지금은 전투에 들어가면 나올 방법이 없음
+7. **PostCombat(전투 후 경계) 상태** 미구현 — 타겟을 완전히 놓쳤을 때(사망/범위 이탈 후 새 타겟도 없음) 처리
+8. 소경직/대경직 모션, 사망 감지/모션 (전용 애니메이션 애셋 확보 필요, `HANDOFF_animation_pipeline.md` 쪽 확인 필요)
+9. 8절 TBD 항목들(가중치 수치, 각도/거리 임계값 등)은 실제 패턴/포지셔닝 붙이면서 테스트로 조정
 
 ## 11. 참고
 

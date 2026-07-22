@@ -29,7 +29,7 @@ public:
 	FGameplayAttributeData MaxGroggy;
 	ATTRIBUTE_ACCESSORS_BASIC(UMonsterAttributeSet, MaxGroggy);
 
-private:
+private:	
 	UFUNCTION()
 	void OnRep_Groggy(const FGameplayAttributeData& OldValue) const;
 
