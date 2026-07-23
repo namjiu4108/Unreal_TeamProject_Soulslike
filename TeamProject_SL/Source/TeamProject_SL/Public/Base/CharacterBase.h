@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "TeamProject_SLCharacter.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemInterface.h"
 #include "GameFramework/Character.h"
@@ -13,11 +14,14 @@ class AController;
 class UAbilitySystemComponent;
 class UBaseAttributeSet;
 class UGameplayAbility;
+struct FOnAttributeChangeData; // GAS attribute 값이 변경시 전달되는 데이터타입, 변경 감지용 콜백으로 사용
 
 UCLASS()
-class TEAMPROJECT_SL_API ACharacterBase : public ACharacter, public IAbilitySystemInterface
+class TEAMPROJECT_SL_API ACharacterBase : public ATeamProject_SLCharacter, public IAbilitySystemInterface
 {
 	GENERATED_BODY()
+
+
 
 public:
 	ACharacterBase();
@@ -38,6 +42,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GASGamePlayAbility")
 	TArray<TSubclassOf<UGameplayAbility>> InitalAbilities;
 
+	// Health 또는 MaxHealth가 변경되었을 때 Blueprint로 알려주는 이벤트
+	// 플레이어에서 이 이벤트를 받아 HP UI를 갱신
+	UFUNCTION(BlueprintImplementableEvent, Category = "Attributes")
+	void OnHealthUpdated(float CurrentHealth, float MaxHealth);
+
 protected:
 	/*멀티플레이 모드 GAS*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AbilitySystem")
@@ -46,6 +55,17 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void PossessedBy(AController* NewController) override;
 	virtual void OnRep_PlayerState() override;
+
+	// AbilitySystemComponent에 Attribute 변경 감지 델리게이트를 등록
+	// 이 함수를 호출시 Health, MP 같은 Attribute가 변경될 때 자동으로 콜백 함수가 실행
+	virtual void BindAttributeChangeDelegates();
+
+	void HandleHealthChanged(const FOnAttributeChangeData& Data);
+	void HandleMaxHealthChanged(const FOnAttributeChangeData& Data);
+
+	// BeginPlay, PossessedBy, OnRep_PlayerState 등 여러 타이밍에서 바인딩을 시도를 막기위해서
+	// 같은 Attribute 변경 콜백이 중복 등록되지 않도록 막는 플래그
+	bool AttributeDelegatesBound = false;
 
 public:
 	virtual void Tick(float DeltaTime) override;
