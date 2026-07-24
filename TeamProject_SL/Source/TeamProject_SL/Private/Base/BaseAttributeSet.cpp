@@ -13,6 +13,11 @@ UBaseAttributeSet::UBaseAttributeSet()
 	MaxMoveSpeed = 2000.0f;
 }
 
+void UBaseAttributeSet::ResetHealthToMax()
+{
+	SetHealth(GetMaxHealth());
+}
+
 void UBaseAttributeSet::OnRep_Health(const FGameplayAttributeData& OldValue) const
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UBaseAttributeSet, Health, OldValue);

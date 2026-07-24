@@ -13,8 +13,8 @@ AMonsterCharacterBase::AMonsterCharacterBase()
 	// 생성자 시점에는 ASC가 아직 초기화되지 않아서 Set 함수(ASC 경유)를 쓰면 안 되고, 구조체에 직접 대입해야 함
 	if (BaseAttribute)
 	{
-		BaseAttribute->Health = 500.0f;
-		BaseAttribute->MaxHealth = 500.0f;
+		BaseAttribute->Health = 800.0f;
+		BaseAttribute->MaxHealth = 800.0f;
 	}
 }
 

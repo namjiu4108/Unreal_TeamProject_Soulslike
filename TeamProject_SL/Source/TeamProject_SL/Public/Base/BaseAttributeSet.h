@@ -37,6 +37,9 @@ public:
 	FGameplayAttributeData MaxMoveSpeed;
 	ATTRIBUTE_ACCESSORS_BASIC(UBaseAttributeSet, MaxMoveSpeed);
 
+	UFUNCTION(BlueprintCallable, Category = "Attribute")
+	void ResetHealthToMax();
+
 	UFUNCTION()
 	void OnRep_Health(const FGameplayAttributeData& OldValue) const;
 
